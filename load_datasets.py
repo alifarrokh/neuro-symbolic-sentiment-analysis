@@ -26,7 +26,7 @@ def load_sts(test_ratio=0.2, seed=48):
         train=Dataset.from_list(data_train),
         test=Dataset.from_list(data_test),
     )
-    return dataset
+    return dataset, 2
 
 
 if __name__ == '__main__':

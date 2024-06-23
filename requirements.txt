@@ -7,3 +7,4 @@ sentencepiece
 transformers
 evaluate
 accelerate
+scikit-learn

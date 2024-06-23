@@ -1,5 +1,6 @@
 tqdm
 numpy
+pandas
 torch
 datasets
 sentencepiece

@@ -2,7 +2,7 @@ import os
 import re
 import random
 import pandas as pd
-from datasets import Dataset, DatasetDict
+from datasets import Dataset, DatasetDict, concatenate_datasets
 from bs4 import BeautifulSoup
 from utils import read_lines
 
@@ -215,6 +215,13 @@ def load_coinco(max_candidates=15, seed=48):
     return dataset
 
 
+def load_lexical_substitution_datset(test_ratio=0.3, max_candidates=15, seed=48):
+    """Merge LST & CoInCo datasets"""
+    lst_dataset = load_lst(max_candidates=max_candidates, seed=seed)
+    coinco_dataset = load_coinco(max_candidates=max_candidates, seed=seed)
+    dataset = concatenate_datasets([lst_dataset, coinco_dataset])
+    return dataset.train_test_split(test_size=test_ratio)
+
+
 if __name__ == '__main__':
-    print(load_coinco())
-    
+    print(load_lexical_substitution_datset())

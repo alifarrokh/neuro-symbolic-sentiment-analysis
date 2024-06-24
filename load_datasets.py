@@ -57,8 +57,6 @@ def parse_lst_label(line):
 def preprocess_lst_sentence(s):
     """Clean a given sentence of LST dataset"""
     chars_to_replace = [
-        ('<head>', ''),
-        ('</head>', ''),
         ('$ ', '$'),
         (' %', '%'),
         ('&amp;', '&'),
@@ -107,9 +105,8 @@ def preprocess_lst_sentence(s):
     return s
 
 
-def sample_lst_candidates(target_word, candidates_dict, label, max_candidates):
+def sample_lst_candidates(candidates, label, max_candidates):
     """Randomly sample candidates from LST dataset"""
-    candidates = candidates_dict[target_word].copy()
     if label in candidates:
         candidates.remove(label)
 
@@ -147,21 +144,25 @@ def load_lst(max_candidates=15, seed=48):
 
     all_sentences = []
     for lexelt in xml_data.find_all('lexelt'):
+        # Note that this target_word is a reduced form (lemma) of the original target word in the sentence (wordform)
         target_word = lexelt['item']
         target_word = target_word if target_word.count('.') < 2 else target_word[:-2]
 
         # Parse sentences
         sentences = lexelt.find_all('instance')
         sentences = [{'id': int(s['id']), 'sentence': preprocess_lst_sentence(s.find('context').decode_contents())} for s in sentences]
+
+        # Extract the original target_token (its wordform)
+        sentences = [s | {'target_token': re.split('<head>|</head>', s['sentence'])[1]} for s in sentences]
+
         sentences = [s for s in sentences if s['id'] in labels] # Ignore sentences that have no label
-        sentences = [{
+        sentences = [s | {
             'id': f"lst_{s['id']}",
-            'sentence': s['sentence'],
             # 'target_word': target_word,
             # 'pos': target_word.split('.')[1],
-            'target_token': target_word.split('.')[0],
+            # 'target_token': target_word.split('.')[0],
             'label': labels[s['id']],
-            'candidates': sample_lst_candidates(target_word, candidates_dict, labels[s['id']], max_candidates)
+            'candidates': sample_lst_candidates(candidates_dict[target_word].copy(), labels[s['id']], max_candidates)
         } for s in sentences]
         all_sentences.extend(sentences)
 
@@ -184,11 +185,29 @@ def load_coinco(max_candidates=15, seed=48):
     all_sentences = []
     for sent in sents:
         sentence = sent.find('targetsentence').text.strip()
+
+        # Used for adding <head> tags
+        temp_left = ''
+        temp_right = sentence
+
         tokens = sent.find_all('token')
         tokens = [t for t in tokens if t['id'] != "XXX"]
         for token in tokens:
             id = token['id']
             target_token = token['wordform']
+
+            # Add <head> tag
+            left, right = temp_right.split(
+                target_token,
+                maxsplit=1, # Avoid over-splitting when there are more than one target_token in the sentence
+            )
+            temp_left += left
+            temp_right = right
+            tagged_sentence = f'{temp_left}<head>{target_token}</head>{temp_right}'
+            temp_left += target_token
+            assert re.sub('<head>|</head>', '', tagged_sentence) == sentence, "A problem occurred while adding the <head> tag."
+
+            # Parse candidates
             candidates = token.find_all('subst')
             candidates = [(c['lemma'], int(c['freq'])) for c in candidates]
             candidates = sorted(candidates, key=lambda c: c[1], reverse=True)
@@ -205,18 +224,18 @@ def load_coinco(max_candidates=15, seed=48):
 
             all_sentences.append({
                 'id': f'coinco_{id}',
-                'sentence': sentence,
+                'sentence': tagged_sentence,
                 'target_token': target_token,
                 'label': label,
                 'candidates': candidates
             })
-    
+
     dataset = Dataset.from_list(all_sentences)
     return dataset
 
 
-def load_lexical_substitution_datset(test_ratio=0.3, max_candidates=15, seed=48):
-    """Merge LST & CoInCo datasets"""
+def load_lexical_substitution_dataset(test_ratio=0.3, max_candidates=15, seed=48):
+    """Merges LST & CoInCo datasets"""
     lst_dataset = load_lst(max_candidates=max_candidates, seed=seed)
     coinco_dataset = load_coinco(max_candidates=max_candidates, seed=seed)
     dataset = concatenate_datasets([lst_dataset, coinco_dataset])
@@ -224,4 +243,4 @@ def load_lexical_substitution_datset(test_ratio=0.3, max_candidates=15, seed=48)
 
 
 if __name__ == '__main__':
-    print(load_lexical_substitution_datset())
+    print(load_lexical_substitution_dataset())

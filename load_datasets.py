@@ -8,6 +8,7 @@ from utils import read_lines
 
 
 # Constants
+COINCO_XML_PATH = 'datasets/CoInCo/coinco.xml'
 STS_CSV_PATH = 'datasets/STS-Gold.csv'
 LST_DIR = 'datasets/LST/'
 
@@ -109,11 +110,14 @@ def preprocess_lst_sentence(s):
 def sample_lst_candidates(target_word, candidates_dict, label, max_candidates):
     """Randomly sample candidates from LST dataset"""
     candidates = candidates_dict[target_word].copy()
-    random.shuffle(candidates)
     if label in candidates:
         candidates.remove(label)
-    if len(candidates) >= max_candidates:
-        candidates = candidates[:max_candidates-1]
+
+    # Sample candidates
+    random.shuffle(candidates)
+    candidates = candidates[:max_candidates-1]
+
+    # Append the true label and shuffle again
     candidates.append(label)
     random.shuffle(candidates)
     return candidates
@@ -153,9 +157,9 @@ def load_lst(max_candidates=15, seed=48):
         sentences = [{
             'id': f"lst_{s['id']}",
             'sentence': s['sentence'],
-            'target_word': target_word,
+            # 'target_word': target_word,
+            # 'pos': target_word.split('.')[1],
             'target_token': target_word.split('.')[0],
-            'pos': target_word.split('.')[1],
             'label': labels[s['id']],
             'candidates': sample_lst_candidates(target_word, candidates_dict, labels[s['id']], max_candidates)
         } for s in sentences]
@@ -164,5 +168,53 @@ def load_lst(max_candidates=15, seed=48):
     dataset = Dataset.from_list(all_sentences)
     return dataset
 
+
+def load_coinco(max_candidates=15, seed=48):
+    """Load CoInco dataset"""
+    random.seed(seed)
+
+    # Load the XML file
+    with open(COINCO_XML_PATH, 'r', encoding='utf-8') as f:
+        xml_data = f.read()
+    xml_data = BeautifulSoup(xml_data, "xml")
+
+    # Parse sentencces
+    sents = xml_data.find_all('sent')
+    
+    all_sentences = []
+    for sent in sents:
+        sentence = sent.find('targetsentence').text.strip()
+        tokens = sent.find_all('token')
+        tokens = [t for t in tokens if t['id'] != "XXX"]
+        for token in tokens:
+            id = token['id']
+            target_token = token['wordform']
+            candidates = token.find_all('subst')
+            candidates = [(c['lemma'], int(c['freq'])) for c in candidates]
+            candidates = sorted(candidates, key=lambda c: c[1], reverse=True)
+            label = candidates.pop(0)[0]
+
+            # Sample candidates
+            candidates = [c[0] for c in candidates]
+            random.shuffle(candidates)
+            candidates = candidates[:max_candidates-1]
+
+            # Append the true label and shuffle again
+            candidates.append(label)
+            random.shuffle(candidates)
+
+            all_sentences.append({
+                'id': f'coinco_{id}',
+                'sentence': sentence,
+                'target_token': target_token,
+                'label': label,
+                'candidates': candidates
+            })
+    
+    dataset = Dataset.from_list(all_sentences)
+    return dataset
+
+
 if __name__ == '__main__':
-    print(load_lst())
+    print(load_coinco())
+    

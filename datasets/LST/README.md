@@ -9,5 +9,5 @@ The following three files are used in this project:
 3. **`lst_all.gold`**: Used to extract ground truth candidates.
 
 ## Note
-The ground truth labels of the following sentence IDs are not available in `lst_all.gold`:
-- **567, 773, 794, 804, 1298, 1886, 1937**
+- Please note that `lst_all_edited.xml` is not an official file. Instead, it is a modified version of `lst_all.xml` that fixes minor XML encoding issues.
+- The ground truth labels of the following sentence IDs are not available in `lst_all.gold`: `567, 773, 794, 804, 1298, 1886, 1937`

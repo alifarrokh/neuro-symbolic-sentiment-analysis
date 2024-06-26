@@ -239,7 +239,7 @@ def load_lexical_substitution_dataset(test_ratio=0.3, max_candidates=15, seed=48
     lst_dataset = load_lst(max_candidates=max_candidates, seed=seed)
     coinco_dataset = load_coinco(max_candidates=max_candidates, seed=seed)
     dataset = concatenate_datasets([lst_dataset, coinco_dataset])
-    return dataset.train_test_split(test_size=test_ratio)
+    return dataset.train_test_split(test_size=test_ratio, seed=seed)
 
 
 if __name__ == '__main__':

@@ -2,59 +2,58 @@ import os
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
-import numpy as np
 from transformers import (
-    AutoConfig,
     AutoTokenizer,
-    DataCollatorWithPadding,
     TrainingArguments,
     Trainer,
 )
-from evaluate import load as load_metric
-from roberta import RobertaForSentimentAnalysis
-from load_datasets import load_sts
+from lexical_substitution_model import (
+    LexicalSubstitutionInputFormatter,
+    LexicalSubstitutionDataCollator,
+    RobertaForLexicalSubstitution,
+)
+from load_datasets import load_lexical_substitution_dataset
 
 
 # Hyperparameters
 train_conf = {
-    'output_dir': 'exps/roberta-sts-base',
-    'batch_size': 16,
+    'output_dir': 'exps/roberta-ls',
+    'batch_size': 32,
     'gradient_accumulation_steps': 1,
-    'epochs': 5,
-    'learning_rate': 5e-5,
-    'warmup_epochs': 1,
+    'epochs': 20,
+    'learning_rate': 1e-4,
+    'warmup_epochs': 2,
     'log_ratio': 0.25,
     'weight_decay': 0.01,
-    'with_han': False
 }
 
 # Load the tokenizer and data collator
 MODEL = 'FacebookAI/roberta-base'
 tokenizer = AutoTokenizer.from_pretrained(MODEL)
-data_collator = DataCollatorWithPadding(tokenizer=tokenizer)
+input_formatter = LexicalSubstitutionInputFormatter(tokenizer)
+data_collator = LexicalSubstitutionDataCollator(tokenizer)
 
-# Load the dataset
-dataset, num_labels = load_sts()
-dataset = dataset.map(lambda item: tokenizer(item['text'], truncation=True), remove_columns=['text'])
+# Load and prepare the dataset
+dataset = load_lexical_substitution_dataset()
+dataset = dataset.map(input_formatter, remove_columns=dataset['train'].column_names)
+
 
 # Evaluation metrics
-accuracy = load_metric('accuracy')
 def compute_metrics(eval_pred):
-    predictions, labels = eval_pred
-    predictions = np.argmax(predictions, axis=1)
-    return accuracy.compute(predictions=predictions, references=labels)
+    preds, labels = eval_pred
+    accuracy = (preds == labels).sum() / len(preds)
+    return {'accuracy': accuracy}
+
 
 # Load the model
-config = AutoConfig.from_pretrained('FacebookAI/roberta-base')
-config.update({'with_han': train_conf['with_han'], 'num_labels': num_labels})
-model = RobertaForSentimentAnalysis.from_pretrained(MODEL, config=config)
+model = RobertaForLexicalSubstitution.from_pretrained(MODEL)
 
 # Verify that experiment folder does not exist
 assert not os.path.exists(train_conf['output_dir']), "Experiment folder already exists."
 
 # Define the training args
 steps_per_epoch = int(len(dataset['train']) / (train_conf['batch_size'] * train_conf['gradient_accumulation_steps']))
-log_steps = int(steps_per_epoch * train_conf['log_ratio'])
+log_steps = max(int(steps_per_epoch * train_conf['log_ratio']), 1)
 training_args = TrainingArguments(
     # Saving
     output_dir=train_conf['output_dir'],
@@ -69,12 +68,10 @@ training_args = TrainingArguments(
     logging_steps=log_steps,
 
     # Training
-    group_by_length=True,
     per_device_train_batch_size=train_conf['batch_size'],
     per_device_eval_batch_size=train_conf['batch_size'],
     gradient_accumulation_steps=train_conf['gradient_accumulation_steps'],
     num_train_epochs=train_conf['epochs'],
-    gradient_checkpointing=True,
     learning_rate=train_conf['learning_rate'],
     warmup_steps=int(steps_per_epoch * train_conf['warmup_epochs']),
     weight_decay=train_conf['weight_decay'],

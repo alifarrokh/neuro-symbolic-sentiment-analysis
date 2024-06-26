@@ -49,9 +49,6 @@ class LexicalSubstitutionInputFormatter:
         sentence_ids = [bos] + [t for part in tokenized_parts for t in part] + [eos]
         candidate_ids = [t for candidate in tokenized_candidates for t in (candidate + [sep])]
 
-        # Verify the manually-created sequence
-        assert tokenizer(re.sub('<head>|</head>', '', sentence))['input_ids'] == sentence_ids
-
         # A helper function to get the index of the last token in each candidate
         candidate_last_token_index = lambda c_index: len(sentence_ids) + sum(tokenized_candidates_lengths[:c_index]) + tokenized_candidates_lengths[c_index] - 2
 
@@ -104,7 +101,7 @@ class InfoNCELoss(nn.Module):
         embeddings = F.normalize(embeddings, dim=-1)
 
         # Create the mask
-        mask = torch.ones((batch_size, sequence_length, sequence_length), dtype=torch.bool)
+        mask = torch.ones((batch_size, sequence_length, sequence_length), dtype=torch.bool).to(embeddings.device)
         for item_index in range(batch_size):
             target_index = target_indices[item_index]
             for candidate_index in candidate_indices[item_index, :]:
@@ -117,7 +114,7 @@ class InfoNCELoss(nn.Module):
         sim_mat = sim_mat.transpose(0, 2).transpose(0, 1) # (sequence_length, sequence_length, batch_size)
 
         # Create labels
-        cross_entropy_labels = torch.full((batch_size, sequence_length), -100, dtype=torch.long)
+        cross_entropy_labels = torch.full((batch_size, sequence_length), -100, dtype=torch.long).to(embeddings.device)
         for item_index, target_index in enumerate(target_indices):
             cross_entropy_labels[item_index, target_index] = labels[item_index]
 

@@ -2,6 +2,7 @@ import re
 from dataclasses import dataclass
 from typing import Optional, Tuple, Union
 import torch
+from torch import nn
 import torch.nn.functional as F
 from torch.nn.utils.rnn import pad_sequence
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
@@ -85,6 +86,50 @@ class LexicalSubstitutionDataCollator:
         return batch
 
 
+class InfoNCELoss(nn.Module):
+    """ Compute The InfoNCE Loss for Lexical Substitution Task """
+
+    def __init__(self):
+        super(InfoNCELoss, self).__init__()
+
+    def forward(
+        self,
+        embeddings: torch.FloatTensor, # (batch_size, max_sequence_length, hidden_size)
+        target_indices: torch.LongTensor, # (batch_size)
+        labels: torch.LongTensor, # (batch_size)
+        candidate_indices: torch.LongTensor, # (batch_size, max_candidates)
+    ) -> torch.Tensor:
+        # Convert embeddings to unit vectors
+        batch_size, sequence_length, _ = embeddings.shape
+        embeddings = F.normalize(embeddings, dim=-1)
+
+        # Create the mask
+        mask = torch.ones((batch_size, sequence_length, sequence_length), dtype=torch.bool)
+        for item_index in range(batch_size):
+            target_index = target_indices[item_index]
+            for candidate_index in candidate_indices[item_index, :]:
+                if candidate_index > 0:
+                    mask[item_index, target_index, candidate_index] = 0
+
+        # Compute the similarity matrix
+        sim_mat = torch.bmm(embeddings, embeddings.transpose(1, 2))
+        logits = sim_mat = sim_mat.masked_fill(mask, - torch.inf)
+        sim_mat = sim_mat.transpose(0, 2).transpose(0, 1) # (sequence_length, sequence_length, batch_size)
+
+        # Create labels
+        cross_entropy_labels = torch.full((batch_size, sequence_length), -100, dtype=torch.long)
+        for item_index, target_index in enumerate(target_indices):
+            cross_entropy_labels[item_index, target_index] = labels[item_index]
+
+        # Compute the loss
+        loss = F.cross_entropy(sim_mat, cross_entropy_labels.T, reduction='sum') / batch_size
+
+        # Compute the predictions (predicted indices)
+        preds = torch.tensor([logits[i, target_indices[i], :].argmax() for i in range(batch_size)], dtype=torch.long)
+
+        return loss, preds
+
+
 class RobertaForLexicalSubstitution(RobertaPreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
@@ -127,37 +172,10 @@ class RobertaForLexicalSubstitution(RobertaPreTrainedModel):
             return_dict=return_dict,
         )
         embeddings = outputs[0]
-        batch_size, sequence_length, _ = embeddings.shape
-
-        # Convert embeddings to unit vectors
-        embeddings = F.normalize(embeddings, dim=-1)
-
-        # Create the mask
-        mask = torch.ones((batch_size, sequence_length, sequence_length), dtype=torch.bool)
-        for item_index in range(batch_size):
-            target_index = target_indices[item_index]
-            for candidate_index in candidate_indices[item_index, :]:
-                if candidate_index > 0:
-                    mask[item_index, target_index, candidate_index] = 0
-
-        # Compute the similarity matrix
-        sim_mat = torch.bmm(embeddings, embeddings.transpose(1, 2))
-        logits = sim_mat = sim_mat.masked_fill(mask, - torch.inf)
-        sim_mat = sim_mat.transpose(0, 2).transpose(0, 1) # (sequence_length, sequence_length, batch_size)
-
-        # Create labels
-        cross_entropy_labels = torch.full((batch_size, sequence_length), -100, dtype=torch.long)
-        for item_index, target_index in enumerate(target_indices):
-            cross_entropy_labels[item_index, target_index] = labels[item_index]
-
-        # Compute the loss
-        loss = F.cross_entropy(sim_mat, cross_entropy_labels.T, reduction='sum') / batch_size
-
-        # Compute the predictions (predicted indices)
-        preds = torch.tensor([logits[i, target_indices[i], :].argmax() for i in range(batch_size)], dtype=torch.long)
+        loss, preds = InfoNCELoss()(embeddings, target_indices, labels, candidate_indices)
 
         if not return_dict:
-            output = (logits,) + outputs[2:]
+            output = (preds,) + outputs[2:]
             return ((loss,) + output) if loss is not None else output
 
         return SequenceClassifierOutput(

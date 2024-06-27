@@ -10,29 +10,20 @@ from transformers.models.roberta.modeling_roberta import (
 
 
 class ScaledDotProductAttention(nn.Module):
-    """
-    Scaled Dot-Product Attention proposed in "Attention Is All You Need"
-    Compute the dot products of the query with all keys, divide each by sqrt(dim),
-    and apply a softmax function to obtain the weights on the values.
-    Args: dim, mask
-        dim (int): dimention of attention
-        mask (torch.Tensor): tensor containing indices to be masked
-    Inputs: query, key, value, mask
-        - query (batch, q_len, d_model): tensor containing projection vector for decoder.
-        - key (batch, k_len, d_model): tensor containing projection vector for encoder.
-        - value (batch, v_len, d_model): tensor containing features of the encoded input sequence.
-        - mask (-): tensor containing indices to be masked
-    Returns: context, attn
-        - context: tensor containing the context vector from attention mechanism.
-        - attn: tensor containing the attention (alignment) from the encoder outputs.
-    """
+    """ Scaled Dot-Product Attention """
     def __init__(self, config):
         super(ScaledDotProductAttention, self).__init__()
         self.hidden_size = config.hidden_size
         self.sqrt_dim = np.sqrt(self.hidden_size)
 
-    def forward(self, query: Tensor, key: Tensor) -> tuple[Tensor, Tensor]:
+    def forward(
+        self,
+        query: Tensor, # (batch_size, 1, hidden_size)
+        key: Tensor, # (batch_size, batch_max_len, hidden_size)
+        attention_mask: Tensor # (batch_size, 1, batch_max_len)
+    ) -> tuple[Tensor, Tensor]:
         score = torch.bmm(query, key.transpose(1, 2)) / self.sqrt_dim
+        score = score * attention_mask
         attn = nn.functional.softmax(score, -1)
         context = torch.bmm(attn, key)
         return context, attn
@@ -52,10 +43,11 @@ class HAN(nn.Module):
 
     def forward(
         self,
-        query: Tensor,  # (batch_size, 1, hidden_size)
-        key: Tensor     # (batch_size, batch_max_len, hidden_size)
+        query: Tensor, # (batch_size, 1, hidden_size)
+        key: Tensor, # (batch_size, batch_max_len, hidden_size)
+        attention_mask: Tensor, # (batch_size, 1, batch_max_len)
     ):
-        context, att_weight = self.att(query,key)
+        context, att_weight = self.att(query, key, attention_mask)
         new_query_vec = self.dropout(self.layer_norm(self.activation(self.linear_observer(context))))
         new_key_matrix = self.dropout(self.layer_norm(self.activation(self.linear_matrix(key))))
         return new_query_vec, new_key_matrix, att_weight
@@ -112,9 +104,8 @@ class RobertaForSentimentAnalysis(RobertaPreTrainedModel):
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
+        return_attention_weights: bool = False,
     ) -> Union[Tuple[torch.Tensor], SequenceClassifierOutput]:
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
-
         outputs = self.roberta(
             input_ids,
             attention_mask=attention_mask,
@@ -131,22 +122,21 @@ class RobertaForSentimentAnalysis(RobertaPreTrainedModel):
         if self.with_han:
             batch_size = sequence_output.shape[0]
             query0 = self.query0.unsqueeze(0).repeat(batch_size, 1, 1) # (batch_size, 1, hidden_size)
-            query1, key1, attention_weight1 = self.han1(query0, sequence_output)
-            query2, key2, attention_weight2 = self.han2(query1, key1)
+            query1, key1, attention_weights1 = self.han1(query0, sequence_output, attention_mask.unsqueeze(1))
+            query2, key2, attention_weights2 = self.han2(query1, key1, attention_mask.unsqueeze(1))
             features = query2.squeeze(1)
         else:
             features = sequence_output[:, 0, :] # Take CLS (<s>) features
         logits = self.classifier(features)
+
+        if self.with_han and return_attention_weights:
+            return logits, attention_weights2.squeeze(1)
 
         loss = None
         if labels is not None:
             labels = labels.to(logits.device)
             loss_fct = nn.CrossEntropyLoss()
             loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
-
-        if not return_dict:
-            output = (logits,) + outputs[2:]
-            return ((loss,) + output) if loss is not None else output
 
         return SequenceClassifierOutput(
             loss=loss,

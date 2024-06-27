@@ -2,7 +2,7 @@ import os
 import re
 import random
 import pandas as pd
-from datasets import Dataset, DatasetDict, concatenate_datasets
+from datasets import Dataset, DatasetDict, concatenate_datasets, load_dataset
 from bs4 import BeautifulSoup
 from utils import read_lines
 
@@ -11,6 +11,11 @@ from utils import read_lines
 COINCO_XML_PATH = 'datasets/CoInCo/coinco.xml'
 STS_CSV_PATH = 'datasets/STS-Gold.csv'
 LST_DIR = 'datasets/LST/'
+
+
+def load_rotten_tomatoes():
+    dataset = load_dataset('cornell-movie-review-data/rotten_tomatoes')
+    return dataset, 2
 
 
 def load_sts(test_ratio=0.2, seed=48):

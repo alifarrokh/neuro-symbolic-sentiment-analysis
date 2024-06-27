@@ -7,12 +7,18 @@ from transformers import (
     TrainingArguments,
     Trainer,
 )
+from datasets import DatasetDict
 from lexical_substitution_model import (
     LexicalSubstitutionInputFormatter,
     LexicalSubstitutionDataCollator,
     RobertaForLexicalSubstitution,
 )
 from load_datasets import load_lexical_substitution_dataset
+
+
+# Create cache directory
+CACHE_DIR = 'cache'
+os.system(f'mkdir -p {CACHE_DIR}')
 
 
 # Hyperparameters
@@ -35,7 +41,9 @@ data_collator = LexicalSubstitutionDataCollator(tokenizer)
 
 # Load and prepare the dataset
 dataset = load_lexical_substitution_dataset()
-dataset = dataset.map(input_formatter, remove_columns=dataset['train'].column_names)
+dataset_train = dataset['train'].map(input_formatter, remove_columns=dataset['train'].column_names, cache_file_name=f'{CACHE_DIR}/ls_train')
+dataset_test = dataset['test'].map(input_formatter, remove_columns=dataset['train'].column_names, cache_file_name=f'{CACHE_DIR}/ls_test')
+dataset = DatasetDict(train=dataset_train, test=dataset_test)
 
 
 # Evaluation metrics

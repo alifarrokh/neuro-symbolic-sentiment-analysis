@@ -86,10 +86,6 @@ def preprocess_lst_sentence(s):
     for c in chars_to_remove:
         s = s.replace(c, '')
 
-    remove_left_space = ',.!?;:)]'
-    for c in remove_left_space:
-        s = s.replace(f' {c}', c)
-
     # Fix apostrophes
     chars_to_replace = [
         (" 's", "'s"),
@@ -175,6 +171,57 @@ def load_lst(max_candidates=15, seed=48):
     return dataset
 
 
+def preprocess_coinco_sentence(s):
+    """
+    Preprocessing CoInCo sentences
+    Note: The order of operations is imortant.
+    """
+    strs_to_replace = [
+        ('”', '"'),
+        ('“', '"'),
+        ('’', '\''), # it is not replaced with " because it is often used as apostrophe
+        ('‘', '"'),
+        ('`', '"'),
+        ('...', ' '),
+        ('\'\'', '"'),
+        ('``', '"'),
+        ('–', ' - '),
+        ('ç', 'c'),
+    ]
+    for s_old, s_new in strs_to_replace:
+        s = s.replace(s_old, s_new)
+
+    # Chars to remove
+    s = re.sub('[>_]', '', s)
+
+    # Remove , between digits
+    s = re.sub(r'(\d),(\d)', r'\g<1>\g<2>', s)
+
+    # Add space between and after some punctuation marks
+    add_space_chars = '"?!,;…/()'
+    for c in add_space_chars:
+        s = s.replace(c, f' {c} ')
+
+    # dolon (:) is a bit special as it can in forms like 12:30
+    s = re.sub(r'(\D):(\D)', r'\g<1> : \g<2>', s)
+
+    # dot (.) is a bit more special, add a space if ...
+    # TODO: The first rule should not affect abbreviation like No., a.m., Feb., Mr., Corp., Inc., etc.
+    s = re.sub(r'([a-z\'%\(\)])\.', r'\g<1> . ', s) # if . follows a lowercase char or another punctuation mark
+    s = re.sub(r'(\d)\.(\D)', r'\g<1> . \g<2>', s) # if . is at the end of a number
+
+    # Fix repeated spaces
+    s = re.sub('[\s\r\n]+', ' ', s).strip()
+
+    # Fix possessive apostrophes
+    s = s.replace(" 's ", "'s ")
+
+    # Replace all quotation marks with "
+    s = s.replace(" '", ' "')
+    s = re.sub(r"([^sn])' ", r'\g<1> "', s)
+    return s
+
+
 def load_coinco(max_candidates=15, seed=48):
     """Load CoInco dataset"""
     random.seed(seed)
@@ -189,7 +236,7 @@ def load_coinco(max_candidates=15, seed=48):
     
     all_sentences = []
     for sent in sents:
-        sentence = sent.find('targetsentence').text.strip()
+        sentence = preprocess_coinco_sentence(sent.find('targetsentence').text)
 
         # Used for adding <head> tags
         temp_left = ''

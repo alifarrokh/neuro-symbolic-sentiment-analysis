@@ -104,7 +104,7 @@ class RobertaForSentimentAnalysis(RobertaPreTrainedModel):
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
-        return_attention_weights: bool = False,
+        return_analysis_info: bool = False,
     ) -> Union[Tuple[torch.Tensor], SequenceClassifierOutput]:
         outputs = self.roberta(
             input_ids,
@@ -129,8 +129,8 @@ class RobertaForSentimentAnalysis(RobertaPreTrainedModel):
             features = sequence_output[:, 0, :] # Take CLS (<s>) features
         logits = self.classifier(features)
 
-        if self.with_han and return_attention_weights:
-            return logits, attention_weights2.squeeze(1)
+        if self.with_han and return_analysis_info:
+            return logits, sequence_output, attention_weights2.squeeze(1)
 
         loss = None
         if labels is not None:

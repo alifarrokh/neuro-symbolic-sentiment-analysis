@@ -11,3 +11,4 @@ scikit-learn
 wn
 beautifulsoup4
 lxml
+nltk

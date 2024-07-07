@@ -222,6 +222,16 @@ def preprocess_coinco_sentence(s):
     return s
 
 
+def preprocess_coinco_target_token(t: str):
+    """Preprocess CoInCo's target tokens to keep them compatible with preprocessed sentences"""
+    chars_to_replace = [
+        ('ç', 'c'),
+    ]
+    for c_old, c_new in chars_to_replace :
+        t = t.replace(c_old, c_new)
+    return t
+
+
 def load_coinco(max_candidates=15, seed=48):
     """Load CoInco dataset"""
     random.seed(seed)
@@ -246,7 +256,7 @@ def load_coinco(max_candidates=15, seed=48):
         tokens = [t for t in tokens if t['id'] != "XXX"]
         for token in tokens:
             id = token['id']
-            target_token = token['wordform']
+            target_token = preprocess_coinco_target_token(token['wordform'])
 
             # Add <head> tag
             left, right = temp_right.split(

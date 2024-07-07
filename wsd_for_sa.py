@@ -7,6 +7,11 @@ from transformers import (
     DataCollatorWithPadding
 )
 from sentiment_analysis_model import RobertaForSentimentAnalysis
+from lexical_substitution_model import (
+    LexicalSubstitutionInputFormatter,
+    LexicalSubstitutionDataCollator,
+    RobertaForLexicalSubstitution
+)
 from load_datasets import load_rotten_tomatoes
 from wsd_utils import get_word_infos, compute_sense_diversity
 
@@ -17,6 +22,7 @@ compute_original_test_accuracy = False # Current = 88.274
 # Hyper-parameters
 I = 5 # Max number of selected words with highest attention weights
 J = 2 # Max number of selected words with highest sense diversity
+K = 15 # Max number of candidates for lexical substitution
 
 # Load SA model
 sa_tokenizer = AutoTokenizer.from_pretrained('FacebookAI/roberta-base')
@@ -57,3 +63,41 @@ for i in range(len(sense_diversities)):
     word_infos[i].sense_diversity = sense_diversities[i]
 word_infos = sorted(word_infos, key=lambda w: w.sense_diversity, reverse=True)
 selected_words = word_infos[:J]
+
+# Load the LS model
+ls_tokenizer = AutoTokenizer.from_pretrained('FacebookAI/roberta-base')
+ls_input_formatter = LexicalSubstitutionInputFormatter(ls_tokenizer)
+ls_data_collator = LexicalSubstitutionDataCollator(ls_tokenizer)
+ls_model = RobertaForLexicalSubstitution.from_pretrained('exps/ls-37')
+
+# Find the best substitutions
+substitutions = []
+for word in selected_words:
+    candidates = word.get_synonyms(limit=K)
+
+    # Create the sentence
+    sentence_words = word.sentence.split(' ')
+    words_left, words_right = sentence_words[:word.index], sentence_words[word.index+1:]
+    input_sentence = ' '.join(words_left) + f' <head>{word.word}</head> ' + ' '.join(words_right)
+
+    # Format the input
+    model_input = {
+        'sentence': input_sentence,
+        'target_token': word.word,
+        'candidates': candidates
+    }
+    model_input = ls_input_formatter(model_input)
+    model_input = ls_data_collator([model_input])
+
+    # Find the best substitution candidate
+    pred_token_index = ls_model(**model_input).logits[0].item()
+    pred_candidate_index = model_input['candidate_indices'][0].tolist().index(pred_token_index)
+    selected_substitute = candidates[pred_candidate_index]
+    substitutions.append({'word_index': word.index, 'new_word': selected_substitute})
+
+# Replace the new words
+words = selected_words[0].sentence.split(' ')
+for substitution in substitutions:
+    words[substitution['word_index']] = substitution['new_word']
+new_sentence = ' '.join(words)
+new_item = item | {'text': new_sentence}

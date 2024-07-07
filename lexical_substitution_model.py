@@ -31,7 +31,10 @@ class LexicalSubstitutionInputFormatter:
 
         sentence = sample['sentence']
         candidates = sample['candidates']
-        label = sample['label']
+
+        has_label = 'label' in sample
+        if has_label:
+            label = sample['label']
 
         # Tokenize the sentencce
         left, target_token, right = re.split('<head>|</head>', sentence)
@@ -41,7 +44,8 @@ class LexicalSubstitutionInputFormatter:
         tokenized_parts = tokenizer([left, target_token, right], add_special_tokens=False)['input_ids']
 
         # Tokenize the candidates
-        label_index = candidates.index(label)
+        if has_label:
+            label_index = candidates.index(label)
         tokenized_candidates = tokenizer(candidates, add_special_tokens=False)['input_ids']
         tokenized_candidates_lengths = [len(c)+1 for c in tokenized_candidates]
 
@@ -56,9 +60,11 @@ class LexicalSubstitutionInputFormatter:
             'input_ids': sentence_ids + candidate_ids,
             'attention_mask': [1] * len(sentence_ids + candidate_ids),
             'target_indices': len(tokenized_parts[0]) + len(tokenized_parts[1]),
-            'label': candidate_last_token_index(label_index),
             'candidate_indices': [candidate_last_token_index(i)  for i in range(len(candidates))],
         }
+        if has_label:
+            item['label'] = candidate_last_token_index(label_index)
+
         return item
 
 
@@ -78,8 +84,10 @@ class LexicalSubstitutionDataCollator:
             return_tensors='pt'
         )
 
-        batch['labels'] = batch.pop('label')
+        if 'label' in batch:
+            batch['labels'] = batch.pop('label')
         batch['candidate_indices'] = candidate_indices
+
         return batch
 
 
@@ -93,8 +101,8 @@ class InfoNCELoss(nn.Module):
         self,
         embeddings: torch.FloatTensor, # (batch_size, max_sequence_length, hidden_size)
         target_indices: torch.LongTensor, # (batch_size)
-        labels: torch.LongTensor, # (batch_size)
         candidate_indices: torch.LongTensor, # (batch_size, max_candidates)
+        labels: Optional[torch.LongTensor] = None, # (batch_size)
     ) -> torch.Tensor:
         # Convert embeddings to unit vectors
         batch_size, sequence_length, _ = embeddings.shape
@@ -114,12 +122,14 @@ class InfoNCELoss(nn.Module):
         sim_mat = sim_mat.transpose(0, 2).transpose(0, 1) # (sequence_length, sequence_length, batch_size)
 
         # Create labels
-        cross_entropy_labels = torch.full((batch_size, sequence_length), -100, dtype=torch.long).to(embeddings.device)
-        for item_index, target_index in enumerate(target_indices):
-            cross_entropy_labels[item_index, target_index] = labels[item_index]
+        loss = None
+        if labels is not None:
+            cross_entropy_labels = torch.full((batch_size, sequence_length), -100, dtype=torch.long).to(embeddings.device)
+            for item_index, target_index in enumerate(target_indices):
+                cross_entropy_labels[item_index, target_index] = labels[item_index]
 
-        # Compute the loss
-        loss = F.cross_entropy(sim_mat, cross_entropy_labels.T, reduction='sum') / batch_size
+            # Compute the loss
+            loss = F.cross_entropy(sim_mat, cross_entropy_labels.T, reduction='sum') / batch_size
 
         # Compute the predictions (predicted indices)
         preds = torch.tensor([logits[i, target_indices[i], :].argmax() for i in range(batch_size)], dtype=torch.long)
@@ -142,9 +152,9 @@ class RobertaForLexicalSubstitution(RobertaPreTrainedModel):
         attention_mask: torch.FloatTensor,
 
         # Additional inputs for lexical substitution
-        target_indices: torch.LongTensor,       # (batch_size)
-        labels: torch.LongTensor,               # (batch_size)
-        candidate_indices: torch.LongTensor,    # (batch_size, max_candidates)
+        target_indices: torch.LongTensor,           # (batch_size)
+        candidate_indices: torch.LongTensor,        # (batch_size, max_candidates)
+        labels: Optional[torch.LongTensor] = None,  # (batch_size)
 
         token_type_ids: Optional[torch.LongTensor] = None,
         position_ids: Optional[torch.LongTensor] = None,
@@ -169,7 +179,7 @@ class RobertaForLexicalSubstitution(RobertaPreTrainedModel):
             return_dict=return_dict,
         )
         embeddings = outputs[0]
-        loss, preds = InfoNCELoss()(embeddings, target_indices, labels, candidate_indices)
+        loss, preds = InfoNCELoss()(embeddings, target_indices, candidate_indices, labels)
 
         if not return_dict:
             output = (preds,) + outputs[2:]

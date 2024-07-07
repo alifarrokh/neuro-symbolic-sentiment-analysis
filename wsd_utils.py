@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from typing import Optional
 import re
 import string
+import random
 import numpy as np
 import nltk
 from utils_nlp import upenn_to_wn_tag, get_word_synonyms
@@ -25,9 +26,12 @@ class WordInfo:
     pos: Optional[str] = None
     sense_diversity: Optional[float] = None
 
-    def get_synonyms(self):
+    def get_synonyms(self, limit: int = None):
         if not hasattr(self, '_synonyms') or self._synonyms is None:
             self._synonyms = get_word_synonyms(self.word, self.pos)
+        if limit and len(self._synonyms) > limit:
+            random.shuffle(self._synonyms)
+            return self._synonyms[:limit]
         return self._synonyms
 
 

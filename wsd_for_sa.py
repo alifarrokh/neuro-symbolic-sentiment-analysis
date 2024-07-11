@@ -25,17 +25,20 @@ I = 5 # Max number of selected words with highest attention weights
 J = 2 # Max number of selected words with highest sense diversity
 K = 15 # Max number of candidates for lexical substitution
 
+# Recognize the device
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
+
 # Load LS model
 ls_tokenizer = AutoTokenizer.from_pretrained('FacebookAI/roberta-base')
 ls_input_formatter = LexicalSubstitutionInputFormatter(ls_tokenizer)
 ls_data_collator = LexicalSubstitutionDataCollator(ls_tokenizer)
-ls_model = RobertaForLexicalSubstitution.from_pretrained('exps/ls/exp1/checkpoint-2016')
+ls_model = RobertaForLexicalSubstitution.from_pretrained('exps/ls/exp1/checkpoint-2016', device_map=device)
 ls_model.eval()
 
 # Load SA model
 sa_tokenizer = AutoTokenizer.from_pretrained('FacebookAI/roberta-base')
 sa_data_collator = DataCollatorWithPadding(tokenizer=sa_tokenizer)
-sa_model = RobertaForSentimentAnalysis.from_pretrained('exps/roberta-rt-han+a/checkpoint-1166')
+sa_model = RobertaForSentimentAnalysis.from_pretrained('exps/roberta-rt-han+a/checkpoint-1166', device_map=device)
 sa_model.eval()
 
 # Load SA dataset
@@ -51,6 +54,7 @@ if compute_original_test_accuracy:
     preds = []
     with torch.no_grad():
         for batch in tqdm(sa_dataloader):
+            batch = {k:v.to(device) for k,v in batch.items()}
             labels.extend(batch['labels'].tolist())
             preds.extend(sa_model(**batch).logits.argmax(axis=-1).tolist())
     accuracy = (np.array(labels) == np.array(preds)).sum() / len(preds)
@@ -101,6 +105,7 @@ for item in tqdm(sa_dataset):
 
         # Find the best substitution candidate
         with torch.no_grad():
+            model_input = {k:v.to(device) for k,v in model_input.items()}
             pred_token_index = ls_model(**model_input).logits[0].item()
         pred_candidate_index = model_input['candidate_indices'][0].tolist().index(pred_token_index)
         selected_substitute = candidates[pred_candidate_index]

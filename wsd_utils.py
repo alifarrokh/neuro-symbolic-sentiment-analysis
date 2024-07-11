@@ -5,6 +5,7 @@ import string
 import random
 import numpy as np
 import nltk
+import torch
 from utils_nlp import upenn_to_wn_tag, get_word_synonyms
 
 
@@ -49,8 +50,10 @@ def get_word_infos(sentence, tokenizer, data_collator, sa_model, with_pos=False)
     model_input = data_collator([tokenized])
 
     # Extract attention weights from model
-    _logits, embeddings, attention_weights = sa_model(**model_input, return_analysis_info=True)
-    embeddings = embeddings.squeeze().detach().numpy()[1:-1, :]
+    with torch.no_grad():
+        model_input = {k:v.to(sa_model.device) for k,v in model_input.items()}
+        _logits, embeddings, attention_weights = sa_model(**model_input, return_analysis_info=True)
+    embeddings = embeddings.squeeze().detach().cpu().numpy()[1:-1, :]
     embeddings = [vec for vec in embeddings] # Convert to list of token embeddings
     attention_weights = attention_weights.squeeze().detach().tolist()
     attention_weights = attention_weights[1:-1] # Exclude <s> and </s>

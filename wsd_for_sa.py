@@ -128,6 +128,7 @@ labels = []
 preds = []
 with torch.no_grad():
     for batch in tqdm(new_sa_dataloader):
+        batch = {k:v.to(device) for k,v in batch.items()}
         labels.extend(batch['labels'].tolist())
         preds.extend(sa_model(**batch).logits.argmax(axis=-1).tolist())
 accuracy = (np.array(labels) == np.array(preds)).sum() / len(preds)

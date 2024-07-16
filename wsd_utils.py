@@ -52,7 +52,8 @@ def get_word_infos(sentence, tokenizer, data_collator, sa_model, with_pos=False)
     # Extract attention weights from model
     with torch.no_grad():
         model_input = {k:v.to(sa_model.device) for k,v in model_input.items()}
-        _logits, embeddings, attention_weights = sa_model(**model_input, return_analysis_info=True)
+        sa_output = sa_model(**model_input, return_analysis_info=True)
+        embeddings, attention_weights = sa_output.embeddings, sa_output.attention_weights
     embeddings = embeddings.squeeze().detach().cpu().numpy()[1:-1, :]
     embeddings = [vec for vec in embeddings] # Convert to list of token embeddings
     attention_weights = attention_weights.squeeze().detach().tolist()

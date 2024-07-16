@@ -15,14 +15,6 @@ from sentiment_analysis_model import RobertaForSentimentAnalysis
 from load_datasets import load_sts
 
 
-"""
-Results
-Very Base Model     0.9433497536945813 (RoBERTa's Classification Head)
-Base Model          0.9482758620689655 (New Classification Head)
-HAN Model           0.9458128078817734 (New Classification Head + HAN)
-"""
-
-
 # Hyperparameters
 train_conf = {
     'output_dir': 'exps/roberta-sts-base',
@@ -33,7 +25,7 @@ train_conf = {
     'warmup_epochs': 1,
     'log_ratio': 0.25,
     'weight_decay': 0.01,
-    'with_han': False
+    'attention': 'han'
 }
 
 # Load the tokenizer and data collator
@@ -62,7 +54,7 @@ assert not os.path.exists(train_conf['output_dir']), "Experiment folder already 
 
 # Define the training args
 steps_per_epoch = int(len(dataset['train']) / (train_conf['batch_size'] * train_conf['gradient_accumulation_steps']))
-log_steps = int(steps_per_epoch * train_conf['log_ratio'])
+log_steps = max(int(steps_per_epoch * train_conf['log_ratio']), 1)
 training_args = TrainingArguments(
     # Saving
     output_dir=train_conf['output_dir'],

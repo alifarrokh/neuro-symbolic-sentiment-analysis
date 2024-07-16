@@ -34,11 +34,11 @@ def get_word_synonyms(word, pos, limit: int = None):
     return synonyms
 
 
-def upenn_to_wn_tag(upenn_tag: str):
+def upenn_to_wn_tag(upenn_tag: str, quiet=True):
     """
     Converts a UPenn tag to one of the four accepted tags by WordNet (a, v, n, r).
     Returns None if the tag is irrelevant in the context of WordNet.
-    Raises an exception if the input tag is unavailable in UPenn tagset.
+    Prints a warning if the input tag is unavailable in UPenn tagset and quiet mode is disabled.
     More info on UPenn tags:
     ```
     import nltk
@@ -103,8 +103,10 @@ def upenn_to_wn_tag(upenn_tag: str):
     elif upenn_tag in irrelevant_tags:
         return None
     else:
-        raise ValueError('The given tag is not a valid UPenn tag.')
-
+        if not quiet:
+            # TODO: Log instead of print
+            print(f'Warning: The given tag ({upenn_tag}) is not a valid UPenn tag.')
+        return None
 
 if __name__ == '__main__':
     # Download WordNet database

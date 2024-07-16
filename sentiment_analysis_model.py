@@ -1,5 +1,6 @@
-import numpy as np
+from dataclasses import dataclass
 from typing import Optional, Tuple, Union
+import numpy as np
 import torch
 from torch import nn, Tensor
 from transformers.modeling_outputs import SequenceClassifierOutput
@@ -73,18 +74,32 @@ class ClassificationHead(nn.Module):
         return x
 
 
+@dataclass
+class SentimentAnalysisWithAttentionOutput:
+    """ A wrapper over outputs of a sentiment analysis model with attention """
+    logits: torch.FloatTensor # (batch_size, num_labels)
+    embeddings: torch.FloatTensor # (batch_size, sequence_length, hidden_size)
+    attention_weights: torch.FloatTensor # (batch_size, sequence_length)
+
+
 class RobertaForSentimentAnalysis(RobertaPreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
+
+        # Validate config params
+        assert config.num_labels >= 2, "Invalid num_labels, this is a classification problem!"
+        assert config.attention in ['none', 'simple', 'han']
+
         self.config = config
         self.num_labels = config.num_labels
-        assert self.num_labels >= 2, "Invalid num_labels, this is a classification problem!"
+        self.attention = config.attention
 
         self.roberta = RobertaModel(config, add_pooling_layer=False)
         self.classifier = ClassificationHead(config)
 
-        self.with_han = config.with_han
-        if self.with_han:
+        if self.attention == 'simple':
+            pass
+        elif self.attention == 'han':
             self.query0 = nn.Parameter(torch.rand((1, config.hidden_size), dtype=torch.float32), requires_grad=True)
             self.han1 = HAN(config)
             self.han2 = HAN(config)
@@ -104,8 +119,11 @@ class RobertaForSentimentAnalysis(RobertaPreTrainedModel):
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
+
+        # Custom args for sentiment analysis
         return_analysis_info: bool = False,
     ) -> Union[Tuple[torch.Tensor], SequenceClassifierOutput]:
+        # Get RoBERTa embeddings
         outputs = self.roberta(
             input_ids,
             attention_mask=attention_mask,
@@ -119,7 +137,10 @@ class RobertaForSentimentAnalysis(RobertaPreTrainedModel):
         )
         sequence_output = outputs[0]
 
-        if self.with_han:
+        # Attention
+        if self.attention == 'simple':
+            pass
+        elif self.attention == 'han':
             batch_size = sequence_output.shape[0]
             query0 = self.query0.unsqueeze(0).repeat(batch_size, 1, 1) # (batch_size, 1, hidden_size)
             query1, key1, attention_weights1 = self.han1(query0, sequence_output, attention_mask.unsqueeze(1))
@@ -127,10 +148,23 @@ class RobertaForSentimentAnalysis(RobertaPreTrainedModel):
             features = query2.squeeze(1)
         else:
             features = sequence_output[:, 0, :] # Take CLS (<s>) features
+
+        # Classification
         logits = self.classifier(features)
 
-        if self.with_han and return_analysis_info:
-            return logits, sequence_output, attention_weights2.squeeze(1)
+        # Sentiment analysis with attention output
+        if self.attention != 'none' and return_analysis_info:
+            attention_weights = None
+            if self.attention == 'han':
+                attention_weights = attention_weights2.squeeze(1)
+            elif self.attention == 'simple':
+                pass
+
+            return SentimentAnalysisWithAttentionOutput(
+                logits=logits,
+                embeddings=sequence_output,
+                attention_weights=attention_weights
+            )
 
         loss = None
         if labels is not None:

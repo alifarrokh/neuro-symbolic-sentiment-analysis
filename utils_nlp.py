@@ -1,3 +1,4 @@
+import os
 import random
 import nltk
 import wn
@@ -106,6 +107,9 @@ def upenn_to_wn_tag(upenn_tag: str):
 
 
 if __name__ == '__main__':
+    # Download WordNet database
+    os.system('python -m wn download oewn:2023')
+
     # Download NLTK packages
     nltk.download('averaged_perceptron_tagger')
     nltk.download('tagsets')

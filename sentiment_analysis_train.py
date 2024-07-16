@@ -25,7 +25,7 @@ train_conf = {
     'warmup_epochs': 1,
     'log_ratio': 0.25,
     'weight_decay': 0.01,
-    'attention': 'han'
+    'attention': 'simple'
 }
 
 # Load the tokenizer and data collator
@@ -46,7 +46,7 @@ def compute_metrics(eval_pred):
 
 # Load the model
 config = AutoConfig.from_pretrained('FacebookAI/roberta-base')
-config.update({'with_han': train_conf['with_han'], 'num_labels': num_labels})
+config.update({'attention': train_conf['attention'], 'num_labels': num_labels})
 model = RobertaForSentimentAnalysis.from_pretrained(MODEL, config=config)
 
 # Verify that experiment folder does not exist

@@ -24,7 +24,7 @@ class ScaledDotProductAttention(nn.Module):
         attention_mask: Tensor # (batch_size, 1, batch_max_len)
     ) -> tuple[Tensor, Tensor]:
         score = torch.bmm(query, key.transpose(1, 2)) / self.sqrt_dim
-        score = score * attention_mask
+        score = score.masked_fill(~ attention_mask.type(torch.bool), - torch.inf)
         attn = nn.functional.softmax(score, -1)
         context = torch.bmm(attn, key)
         return context, attn
@@ -98,7 +98,11 @@ class RobertaForSentimentAnalysis(RobertaPreTrainedModel):
         self.classifier = ClassificationHead(config)
 
         if self.attention == 'simple':
-            pass
+            self.score_predictor = nn.Sequential(
+                nn.Linear(config.hidden_size, config.hidden_size),
+                nn.ReLU(),
+                nn.Linear(config.hidden_size, 1),
+            )
         elif self.attention == 'han':
             self.query0 = nn.Parameter(torch.rand((1, config.hidden_size), dtype=torch.float32), requires_grad=True)
             self.han1 = HAN(config)
@@ -135,34 +139,33 @@ class RobertaForSentimentAnalysis(RobertaPreTrainedModel):
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
         )
-        sequence_output = outputs[0]
+        embeddings = outputs[0]
 
         # Attention
         if self.attention == 'simple':
-            pass
+            scores = self.score_predictor(embeddings).squeeze(-1) # (batch_size, sequence_length)
+            scores = scores.masked_fill(~ attention_mask.type(torch.bool), - torch.inf)
+            attention_weights = nn.functional.softmax(scores, -1)
+            attention_weights = attention_weights.unsqueeze(1) # (batch_size, 1, sequence_length)
+            features = torch.bmm(attention_weights, embeddings) # (batch_size, 1, hidden_size)
+            features = features.squeeze(1) # (batch_size, hidden_size)
         elif self.attention == 'han':
-            batch_size = sequence_output.shape[0]
+            batch_size = embeddings.shape[0]
             query0 = self.query0.unsqueeze(0).repeat(batch_size, 1, 1) # (batch_size, 1, hidden_size)
-            query1, key1, attention_weights1 = self.han1(query0, sequence_output, attention_mask.unsqueeze(1))
-            query2, key2, attention_weights2 = self.han2(query1, key1, attention_mask.unsqueeze(1))
-            features = query2.squeeze(1)
+            query1, key1, _attention_weights_han1 = self.han1(query0, embeddings, attention_mask.unsqueeze(1))
+            query2, key2, attention_weights = self.han2(query1, key1, attention_mask.unsqueeze(1))
+            features = query2.squeeze(1) # (batch_size, hidden_size)
         else:
-            features = sequence_output[:, 0, :] # Take CLS (<s>) features
+            features = embeddings[:, 0, :] # Take CLS (<s>) features => (batch_size, hidden_size)
 
         # Classification
         logits = self.classifier(features)
 
         # Sentiment analysis with attention output
         if self.attention != 'none' and return_analysis_info:
-            attention_weights = None
-            if self.attention == 'han':
-                attention_weights = attention_weights2.squeeze(1)
-            elif self.attention == 'simple':
-                pass
-
             return SentimentAnalysisWithAttentionOutput(
                 logits=logits,
-                embeddings=sequence_output,
+                embeddings=embeddings,
                 attention_weights=attention_weights
             )
 

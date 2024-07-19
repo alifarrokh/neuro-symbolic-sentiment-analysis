@@ -5,6 +5,7 @@ import pandas as pd
 from datasets import Dataset, DatasetDict, concatenate_datasets, load_dataset
 from bs4 import BeautifulSoup
 from utils import read_lines
+from utils_nlp import upenn_to_wn_tag
 
 
 # Constants
@@ -160,7 +161,7 @@ def load_lst(max_candidates=15, seed=48):
         sentences = [s | {
             'id': f"lst_{s['id']}",
             # 'target_word': target_word,
-            # 'pos': target_word.split('.')[1],
+            'pos': target_word.split('.')[1],
             # 'target_token': target_word.split('.')[0],
             'label': labels[s['id']],
             'candidates': sample_lst_candidates(candidates_dict[target_word].copy(), labels[s['id']], max_candidates)
@@ -256,6 +257,7 @@ def load_coinco(max_candidates=15, seed=48):
         tokens = [t for t in tokens if t['id'] != "XXX"]
         for token in tokens:
             id = token['id']
+            pos_tag = upenn_to_wn_tag(token['posMASC'])
             target_token = preprocess_coinco_target_token(token['wordform'])
 
             # Add <head> tag
@@ -288,6 +290,7 @@ def load_coinco(max_candidates=15, seed=48):
                 'id': f'coinco_{id}',
                 'sentence': tagged_sentence,
                 'target_token': target_token,
+                'pos': pos_tag,
                 'label': label,
                 'candidates': candidates
             })

@@ -1,6 +1,7 @@
 import re
 from dataclasses import dataclass
 from typing import Optional, Tuple, Union
+import random
 import torch
 from torch import nn
 import torch.nn.functional as F
@@ -12,6 +13,7 @@ from transformers.models.roberta.modeling_roberta import (
     RobertaPreTrainedModel,
     RobertaModel,
 )
+from utils_nlp import get_word_synonyms
 
 
 @dataclass
@@ -22,6 +24,8 @@ class LexicalSubstitutionInputFormatter:
     """
 
     tokenizer: PreTrainedTokenizerBase
+    include_wordnet_candidates: bool = True # Only used for training
+    max_candidates: int = 15
 
     def __call__(self, sample):
         tokenizer = self.tokenizer
@@ -35,6 +39,15 @@ class LexicalSubstitutionInputFormatter:
         has_label = 'label' in sample
         if has_label:
             label = sample['label']
+
+        if has_label and self.include_wordnet_candidates:
+            wordnet_candidates = get_word_synonyms(sample['target_token'], sample['pos'])
+            if len(wordnet_candidates) > 0:
+                candidates.remove(label)
+                candidates = candidates + wordnet_candidates
+                random.shuffle(candidates)
+                candidates = candidates[:self.max_candidates-1] + [label]
+                random.shuffle(candidates)
 
         # Tokenize the sentencce
         left, target_token, right = re.split('<head>|</head>', sentence)

@@ -1,19 +1,10 @@
 from dataclasses import dataclass
 from typing import Optional
-import re
-import string
 import random
 import numpy as np
 import nltk
 import torch
 from utils_nlp import upenn_to_wn_tag, get_word_synonyms
-
-
-def clean_selected_word(w):
-    """Remove punctuation and strip"""
-    w = w.translate(str.maketrans('', '', string.punctuation))
-    w = re.sub('\s', ' ', w).strip()
-    return w
 
 
 @dataclass
@@ -72,7 +63,7 @@ def get_word_infos(sentence, tokenizer, data_collator, sa_model, with_pos=False)
 
         word_info = WordInfo(
             sentence=sentence,
-            word=clean_selected_word(words[i]),
+            word=words[i],
             index=i,
             att_weight=np.max(weights),
             embedding=np.array(word_embeddings).mean(axis=0),
